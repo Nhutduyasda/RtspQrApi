@@ -1,0 +1,35 @@
+@RtspQrApi_HostAddress = http://localhost:5295
+
+POST {{RtspQrApi_HostAddress}}/api/cameras
+Content-Type: application/json
+
+{
+  "id": "cam01",
+  "name": "QR Gate Camera",
+  "rtspUrl": "rtsp://localhost:8554/cam01"
+}
+
+###
+
+POST {{RtspQrApi_HostAddress}}/api/cameras/cam01/start
+Accept: application/json
+
+###
+
+GET {{RtspQrApi_HostAddress}}/api/cameras/cam01/status
+Accept: application/json
+
+###
+
+GET {{RtspQrApi_HostAddress}}/api/cameras/cam01/snapshot
+Accept: image/jpeg
+
+###
+
+GET {{RtspQrApi_HostAddress}}/api/cameras/cam01/latest-qr
+Accept: application/json
+
+###
+
+POST {{RtspQrApi_HostAddress}}/api/cameras/cam01/stop
+Accept: application/json
