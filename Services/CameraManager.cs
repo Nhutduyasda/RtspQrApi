@@ -8,6 +8,7 @@ public sealed class CameraManager : IAsyncDisposable
     private readonly ConcurrentDictionary<string, CameraConfig> _configs = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, FrameStore> _frameStores = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, CameraWorker> _workers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly SemaphoreSlim _workerGate = new(1, 1);
     private readonly ILoggerFactory _loggerFactory;
 
     public CameraManager(ILoggerFactory loggerFactory)
@@ -38,32 +39,63 @@ public sealed class CameraManager : IAsyncDisposable
         return _configs.ContainsKey(id);
     }
 
-    public Task<bool> StartAsync(string id)
+    public async Task<bool> StartAsync(string id)
     {
-        if (!_configs.TryGetValue(id, out var config))
+        await _workerGate.WaitAsync().ConfigureAwait(false);
+        try
         {
-            return Task.FromResult(false);
-        }
+            if (!_configs.TryGetValue(id, out var config))
+            {
+                return false;
+            }
 
-        var worker = _workers.GetOrAdd(id, cameraId =>
+            if (_workers.TryGetValue(id, out var existingWorker) &&
+                existingWorker.IsStopRequested &&
+                !existingWorker.IsRunning)
+            {
+                _workers.TryRemove(id, out _);
+                await existingWorker.DisposeAsync().ConfigureAwait(false);
+            }
+
+            var worker = _workers.GetOrAdd(id, cameraId =>
         {
             var store = _frameStores.GetOrAdd(cameraId, _ => new FrameStore());
             var logger = _loggerFactory.CreateLogger<CameraWorker>();
             return new CameraWorker(config, store, logger);
         });
 
-        return worker.StartAsync().ContinueWith(_ => true, TaskScheduler.Default);
+            await worker.StartAsync().ConfigureAwait(false);
+            return true;
+        }
+        finally
+        {
+            _workerGate.Release();
+        }
     }
 
     public async Task<bool> StopAsync(string id)
     {
-        if (!_workers.TryRemove(id, out var worker))
+        await _workerGate.WaitAsync().ConfigureAwait(false);
+        try
         {
-            return _configs.ContainsKey(id);
-        }
+            if (!_workers.TryGetValue(id, out var worker))
+            {
+                return _configs.ContainsKey(id);
+            }
 
-        await worker.DisposeAsync().ConfigureAwait(false);
-        return true;
+            var stopped = await worker.StopAsync().ConfigureAwait(false);
+            if (stopped)
+            {
+                _workers.TryRemove(id, out _);
+                await worker.DisposeAsync().ConfigureAwait(false);
+            }
+
+            return true;
+        }
+        finally
+        {
+            _workerGate.Release();
+        }
     }
 
     public CameraStatus? GetStatus(string id)
@@ -98,5 +130,6 @@ public sealed class CameraManager : IAsyncDisposable
         }
 
         _workers.Clear();
+        _workerGate.Dispose();
     }
 }

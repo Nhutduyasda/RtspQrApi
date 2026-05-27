@@ -5,7 +5,7 @@ using RtspQrApi.Services;
 namespace RtspQrApi.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/cameras")]
 public sealed class CamerasController : ControllerBase
 {
     private readonly CameraManager _cameraManager;
@@ -39,7 +39,7 @@ public sealed class CamerasController : ControllerBase
     public async Task<IActionResult> Stop(string id)
     {
         var stopped = await _cameraManager.StopAsync(id).ConfigureAwait(false);
-        return stopped ? Ok(new { cameraId = id, isRunning = false }) : NotFound();
+        return stopped ? Ok(_cameraManager.GetStatus(id)) : NotFound();
     }
 
     [HttpGet("{id}/status")]

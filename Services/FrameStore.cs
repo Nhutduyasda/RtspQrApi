@@ -33,7 +33,7 @@ public sealed class FrameStore
                 return false;
             }
 
-            jpeg = (byte[])_latestJpeg.Clone();
+            jpeg = _latestJpeg;
             return true;
         }
     }
