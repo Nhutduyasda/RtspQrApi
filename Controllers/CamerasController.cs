@@ -17,6 +17,20 @@ public sealed class CamerasController : ControllerBase
         _qrProcessor = qrProcessor;
     }
 
+    [HttpGet]
+    public IActionResult GetCameras()
+    {
+        var cameras = _cameraManager.GetCameras()
+            .Select(config => new CameraSummary(
+                config.Id,
+                config.Name,
+                config.RtspUrl,
+                _cameraManager.GetStatus(config.Id)!,
+                _qrProcessor.GetLatest(config.Id)));
+
+        return Ok(cameras);
+    }
+
     [HttpPost]
     public IActionResult AddCamera(CameraConfig config)
     {

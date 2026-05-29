@@ -34,6 +34,13 @@ public sealed class CameraManager : IAsyncDisposable
         return true;
     }
 
+    public IReadOnlyCollection<CameraConfig> GetCameras()
+    {
+        return _configs.Values
+            .OrderBy(camera => camera.Id, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
     public bool CameraExists(string id)
     {
         return _configs.ContainsKey(id);

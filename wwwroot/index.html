@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RTSPQR Dashboard</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <header class="topbar">
+        <div class="brand">
+            <div class="brand-mark" aria-hidden="true">QR</div>
+            <div>
+                <h1>RTSPQR Dashboard</h1>
+                <p>Camera RTSP, snapshot, QR</p>
+            </div>
+        </div>
+        <div class="api-pill" id="apiHealth">API đang kết nối</div>
+    </header>
+
+    <main class="layout">
+        <section class="tool-panel" aria-label="Them camera">
+            <form class="camera-form" id="cameraForm">
+                <label>
+                    <span>Camera ID</span>
+                    <input name="id" autocomplete="off" placeholder="cam01" required pattern="[A-Za-z0-9_-]{1,64}">
+                </label>
+                <label>
+                    <span>Tên camera</span>
+                    <input name="name" autocomplete="off" placeholder="QR Gate Camera" required>
+                </label>
+                <label class="rtsp-field">
+                    <span>RTSP URL</span>
+                    <input name="rtspUrl" autocomplete="off" placeholder="rtsp://localhost:8554/cam01" required>
+                </label>
+                <label class="toggle">
+                    <input type="checkbox" id="autoStart" checked>
+                    <span>Start sau khi thêm</span>
+                </label>
+                <button class="primary-button" type="submit">Thêm camera</button>
+            </form>
+        </section>
+
+        <section class="summary-grid" aria-label="Tong quan">
+            <article class="summary-item">
+                <span>Tổng camera</span>
+                <strong id="totalCameras">0</strong>
+            </article>
+            <article class="summary-item">
+                <span>Đang chạy</span>
+                <strong id="runningCameras">0</strong>
+            </article>
+            <article class="summary-item">
+                <span>Có tín hiệu</span>
+                <strong id="connectedCameras">0</strong>
+            </article>
+            <article class="summary-item">
+                <span>QR tìm thấy</span>
+                <strong id="qrFound">0</strong>
+            </article>
+        </section>
+
+        <section class="camera-section" aria-label="Danh sach camera">
+            <div class="section-bar">
+                <div>
+                    <h2>Camera</h2>
+                    <span id="lastUpdated">Chưa cập nhật</span>
+                </div>
+                <button class="secondary-button" id="refreshButton" type="button">Làm mới</button>
+            </div>
+
+            <div class="empty-state" id="emptyState" hidden>
+                <strong>Chưa có camera</strong>
+                <span>Thêm camera RTSP đầu tiên để xem snapshot và trạng thái tại đây.</span>
+            </div>
+
+            <div class="camera-grid" id="cameraGrid"></div>
+        </section>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="/app.js" defer></script>
+</body>
+</html>
