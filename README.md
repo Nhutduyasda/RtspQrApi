@@ -1,6 +1,6 @@
 # RtspQrApi
 
-> ASP.NET Core Web API thực hành đọc RTSP stream từ IP Camera hoặc fake IP Camera, cache latest frame trên backend, và trả status, snapshot, QR result mock cho nhiều users.
+> ASP.NET Core Web API thực hành đọc RTSP stream từ IP Camera hoặc fake IP Camera, cache latest frame trên backend, phát hiện QR thật bằng OpenCV, lưu lịch sử QR, và trả status, snapshot, QR result cho nhiều users.
 
 ## Kiến trúc tổng quan
 
@@ -11,7 +11,8 @@ ASP.NET Core Web API
         → CameraManager
             → CameraWorker (1 worker / 1 camera)
                 → FrameStore (latest JPEG frame)
-                → QrProcessor (mock)
+                → QrProcessor (OpenCV QRCodeDetector)
+                → SQL Server LocalDB (QR history)
         → API users
 ```
 
@@ -27,6 +28,7 @@ ASP.NET Core Web API
 | [MediaMTX](https://github.com/bluenviron/mediamtx) | RTSP server giả lập |
 | [FFmpeg](https://ffmpeg.org/) | Push stream vào MediaMTX |
 | VLC hoặc RTSP viewer | Kiểm tra stream trước khi chạy API |
+| SQL Server LocalDB | Lưu lịch sử QR result |
 
 > `ffmpeg`, `mediamtx`, và `vlc` chưa nằm trong PATH trên máy lúc project được tạo. Nếu dùng Windows, có thể cài bằng `winget`:
 
@@ -103,6 +105,30 @@ dotnet run --launch-profile http
 | API base | `http://localhost:5295` |
 | OpenAPI JSON | `http://localhost:5295/openapi/v1.json` |
 
+### Đăng nhập dashboard/API
+
+Trong môi trường Development, dashboard và API được bảo vệ bằng Basic Auth:
+
+| Username | Password |
+|----------|----------|
+| `admin` | `admin123` |
+
+Khi gọi API bằng PowerShell, tạo header một lần rồi thêm `-Headers $headers` vào các lệnh:
+
+```powershell
+$pair = "admin:admin123"
+$token = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($pair))
+$headers = @{ Authorization = "Basic $token" }
+```
+
+Có thể đổi credential bằng environment variables:
+
+```powershell
+$env:BasicAuth__Username = "your-user"
+$env:BasicAuth__Password = "your-password"
+dotnet run --launch-profile http
+```
+
 ---
 
 ### Bước 4 — Thêm camera
@@ -110,6 +136,7 @@ dotnet run --launch-profile http
 ```powershell
 Invoke-RestMethod -Method Post `
   -Uri "http://localhost:5295/api/cameras" `
+  -Headers $headers `
   -ContentType "application/json" `
   -Body '{
     "id": "cam01",
@@ -123,7 +150,7 @@ Invoke-RestMethod -Method Post `
 ### Bước 5 — Bắt đầu camera
 
 ```powershell
-Invoke-RestMethod -Method Post -Uri "http://localhost:5295/api/cameras/cam01/start"
+Invoke-RestMethod -Method Post -Uri "http://localhost:5295/api/cameras/cam01/start" -Headers $headers
 ```
 
 **Log mong đợi:**
@@ -138,7 +165,7 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:5295/api/cameras/cam01/sta
 ### Bước 6 — Lấy trạng thái camera
 
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:5295/api/cameras/cam01/status"
+Invoke-RestMethod -Uri "http://localhost:5295/api/cameras/cam01/status" -Headers $headers
 ```
 
 **Response mẫu:**
@@ -162,7 +189,7 @@ Invoke-RestMethod -Uri "http://localhost:5295/api/cameras/cam01/status"
 ### Bước 7 — Lấy snapshot
 
 ```powershell
-Invoke-WebRequest -Uri "http://localhost:5295/api/cameras/cam01/snapshot" -OutFile ".\snapshot.jpg"
+Invoke-WebRequest -Uri "http://localhost:5295/api/cameras/cam01/snapshot" -Headers $headers -OutFile ".\snapshot.jpg"
 ```
 
 Mở `snapshot.jpg` để xem frame mới nhất. Endpoint trả về `404` nếu camera chưa có frame nào.
@@ -172,10 +199,10 @@ Mở `snapshot.jpg` để xem frame mới nhất. Endpoint trả về `404` nế
 ### Bước 8 — Lấy QR result mới nhất
 
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:5295/api/cameras/cam01/latest-qr"
+Invoke-RestMethod -Uri "http://localhost:5295/api/cameras/cam01/latest-qr" -Headers $headers
 ```
 
-**Response ban đầu là mock:**
+**Response khi chưa thấy QR:**
 
 ```json
 {
@@ -186,18 +213,42 @@ Invoke-RestMethod -Uri "http://localhost:5295/api/cameras/cam01/latest-qr"
 }
 ```
 
+Khi camera thấy QR thật, `found` sẽ là `true`, `value` là nội dung QR và `detectedAt` là thời điểm phát hiện.
+
+---
+
+### Bước 9 — Lấy lịch sử QR đã lưu
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:5295/api/cameras/cam01/qr-results?take=50" -Headers $headers
+```
+
+### Bước 10 — Xem live MJPEG trên browser
+
+Khi camera đang chạy, dashboard tự dùng endpoint MJPEG:
+
+```text
+http://localhost:5295/api/cameras/cam01/mjpeg
+```
+
 ---
 
 ## Danh sách API endpoints
 
 | Method | Path | Mục đích |
 |--------|------|----------|
+| `GET` | `/api/cameras` | Danh sách camera và status hiện tại |
 | `POST` | `/api/cameras` | Thêm camera config |
+| `DELETE` | `/api/cameras/{id}` | Dừng worker và xóa camera config, giữ QR history |
+| `POST` | `/api/cameras/start-all` | Start tất cả camera đã lưu |
+| `POST` | `/api/cameras/stop-all` | Stop tất cả camera đang chạy |
 | `POST` | `/api/cameras/{id}/start` | Bắt đầu đọc RTSP |
 | `POST` | `/api/cameras/{id}/stop` | Dừng worker |
 | `GET` | `/api/cameras/{id}/status` | Lấy trạng thái camera |
 | `GET` | `/api/cameras/{id}/snapshot` | Lấy JPEG frame mới nhất |
-| `GET` | `/api/cameras/{id}/latest-qr` | Lấy QR result mock |
+| `GET` | `/api/cameras/{id}/mjpeg` | Xem live stream MJPEG trong browser |
+| `GET` | `/api/cameras/{id}/latest-qr` | Lấy QR result mới nhất |
+| `GET` | `/api/cameras/{id}/qr-results?take=50` | Lấy lịch sử QR đã lưu |
 
 ---
 
@@ -208,7 +259,7 @@ Invoke-RestMethod -Uri "http://localhost:5295/api/cameras/cam01/latest-qr"
 3. Gọi status:
 
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:5295/api/cameras/cam01/status"
+Invoke-RestMethod -Uri "http://localhost:5295/api/cameras/cam01/status" -Headers $headers
 ```
 
 `isConnected` sẽ về `false`, `reconnectCount` tăng, log có dòng reconnect.
@@ -224,7 +275,7 @@ Invoke-RestMethod -Uri "http://localhost:5295/api/cameras/cam01/status"
 
 ```powershell
 1..30 | ForEach-Object -Parallel {
-  Invoke-RestMethod -Uri "http://localhost:5295/api/cameras/cam01/status"
+  Invoke-RestMethod -Uri "http://localhost:5295/api/cameras/cam01/status" -Headers $using:headers
 } -ThrottleLimit 30
 ```
 
@@ -232,7 +283,7 @@ Invoke-RestMethod -Uri "http://localhost:5295/api/cameras/cam01/status"
 
 ```powershell
 1..30 | ForEach-Object -Parallel {
-  Invoke-WebRequest -Uri "http://localhost:5295/api/cameras/cam01/snapshot" -OutFile ".\snapshot-$_.jpg"
+  Invoke-WebRequest -Uri "http://localhost:5295/api/cameras/cam01/snapshot" -Headers $using:headers -OutFile ".\snapshot-$_.jpg"
 } -ThrottleLimit 30
 ```
 
@@ -263,8 +314,8 @@ RtspQrApi/
 
 ## Các bước tiếp theo
 
-- [ ] Thay `QrProcessor` mock bằng **ZXing.Net** hoặc OpenCV `QRCodeDetector`
-- [ ] Lưu QR result vào database
-- [ ] Thêm authentication cho API
-- [ ] Thêm nhiều cameras và endpoint list cameras
-- [ ] Thêm MJPEG endpoint hoặc dashboard xem status real-time
+- [x] Thay `QrProcessor` mock bằng OpenCV `QRCodeDetector`
+- [x] Lưu QR result vào SQL Server LocalDB
+- [x] Thêm authentication cho API/dashboard bằng Basic Auth
+- [x] Thêm nhiều cameras, lưu camera config vào SQL Server, start-all/stop-all/delete
+- [x] Thêm MJPEG endpoint và dashboard live view/status real-time

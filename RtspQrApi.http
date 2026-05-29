@@ -1,7 +1,15 @@
 @RtspQrApi_HostAddress = http://localhost:5295
+@BasicAuth = Basic YWRtaW46YWRtaW4xMjM=
+
+GET {{RtspQrApi_HostAddress}}/api/cameras
+Accept: application/json
+Authorization: {{BasicAuth}}
+
+###
 
 POST {{RtspQrApi_HostAddress}}/api/cameras
 Content-Type: application/json
+Authorization: {{BasicAuth}}
 
 {
   "id": "cam01",
@@ -13,23 +21,58 @@ Content-Type: application/json
 
 POST {{RtspQrApi_HostAddress}}/api/cameras/cam01/start
 Accept: application/json
+Authorization: {{BasicAuth}}
+
+###
+
+POST {{RtspQrApi_HostAddress}}/api/cameras/start-all
+Accept: application/json
+Authorization: {{BasicAuth}}
 
 ###
 
 GET {{RtspQrApi_HostAddress}}/api/cameras/cam01/status
 Accept: application/json
+Authorization: {{BasicAuth}}
 
 ###
 
 GET {{RtspQrApi_HostAddress}}/api/cameras/cam01/snapshot
 Accept: image/jpeg
+Authorization: {{BasicAuth}}
+
+###
+
+GET {{RtspQrApi_HostAddress}}/api/cameras/cam01/mjpeg
+Accept: multipart/x-mixed-replace
+Authorization: {{BasicAuth}}
 
 ###
 
 GET {{RtspQrApi_HostAddress}}/api/cameras/cam01/latest-qr
 Accept: application/json
+Authorization: {{BasicAuth}}
+
+###
+
+GET {{RtspQrApi_HostAddress}}/api/cameras/cam01/qr-results?take=50
+Accept: application/json
+Authorization: {{BasicAuth}}
 
 ###
 
 POST {{RtspQrApi_HostAddress}}/api/cameras/cam01/stop
 Accept: application/json
+Authorization: {{BasicAuth}}
+
+###
+
+POST {{RtspQrApi_HostAddress}}/api/cameras/stop-all
+Accept: application/json
+Authorization: {{BasicAuth}}
+
+###
+
+DELETE {{RtspQrApi_HostAddress}}/api/cameras/cam01
+Accept: application/json
+Authorization: {{BasicAuth}}

@@ -66,7 +66,11 @@
                     <h2>Camera</h2>
                     <span id="lastUpdated">Chưa cập nhật</span>
                 </div>
-                <button class="secondary-button" id="refreshButton" type="button">Làm mới</button>
+                <div class="section-actions">
+                    <button class="secondary-button" id="startAllButton" type="button">Start all</button>
+                    <button class="secondary-button" id="stopAllButton" type="button">Stop all</button>
+                    <button class="secondary-button" id="refreshButton" type="button">Làm mới</button>
+                </div>
             </div>
 
             <div class="empty-state" id="emptyState" hidden>
@@ -80,6 +84,6 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-    <script src="/app.js" defer></script>
+    <script src="/app.js?v=auth-mjpeg-camera-db" defer></script>
 </body>
 </html>

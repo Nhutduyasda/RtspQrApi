@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using OpenCvSharp;
 using RtspQrApi.Models;
 
@@ -8,6 +9,7 @@ public sealed class CameraWorker : IAsyncDisposable
     private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan StaleFrameTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan RtspProbeTimeout = TimeSpan.FromSeconds(1);
     private const int CaptureOpenTimeoutMilliseconds = 5000;
     private const int CaptureReadTimeoutMilliseconds = 5000;
     private const int OpenTimeoutPropertyId = 53;
@@ -15,6 +17,7 @@ public sealed class CameraWorker : IAsyncDisposable
 
     private readonly CameraConfig _config;
     private readonly FrameStore _frameStore;
+    private readonly QrProcessor _qrProcessor;
     private readonly ILogger<CameraWorker> _logger;
     private readonly object _lifecycleSync = new();
     private readonly object _statusSync = new();
@@ -24,10 +27,11 @@ public sealed class CameraWorker : IAsyncDisposable
     private string? _lastError;
     private int _reconnectCount;
 
-    public CameraWorker(CameraConfig config, FrameStore frameStore, ILogger<CameraWorker> logger)
+    public CameraWorker(CameraConfig config, FrameStore frameStore, QrProcessor qrProcessor, ILogger<CameraWorker> logger)
     {
         _config = config;
         _frameStore = frameStore;
+        _qrProcessor = qrProcessor;
         _logger = logger;
     }
 
@@ -152,6 +156,7 @@ public sealed class CameraWorker : IAsyncDisposable
     {
         using var capture = new VideoCapture();
 
+        await EnsureRtspServerReachableAsync(_config.RtspUrl, stoppingToken).ConfigureAwait(false);
         ConfigureCapture(capture);
 
         if (!capture.Open(_config.RtspUrl, VideoCaptureAPIs.FFMPEG) && !capture.Open(_config.RtspUrl))
@@ -181,6 +186,7 @@ public sealed class CameraWorker : IAsyncDisposable
             var receivedAt = DateTimeOffset.UtcNow;
             Cv2.ImEncode(".jpg", frame, out var buffer);
             _frameStore.Update(buffer.ToArray(), frame.Width, frame.Height, fps, receivedAt);
+            await _qrProcessor.ProcessFrameAsync(_config.Id, frame, receivedAt, stoppingToken).ConfigureAwait(false);
             lastFrameAt = receivedAt;
 
             if (!loggedFrameInfo)
@@ -231,6 +237,36 @@ public sealed class CameraWorker : IAsyncDisposable
     {
         capture.Set((VideoCaptureProperties)OpenTimeoutPropertyId, CaptureOpenTimeoutMilliseconds);
         capture.Set((VideoCaptureProperties)ReadTimeoutPropertyId, CaptureReadTimeoutMilliseconds);
+    }
+
+    private static async Task EnsureRtspServerReachableAsync(string rtspUrl, CancellationToken stoppingToken)
+    {
+        if (!Uri.TryCreate(rtspUrl, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != "rtsp" && uri.Scheme != "rtsps"))
+        {
+            return;
+        }
+
+        var port = uri.Port > 0
+            ? uri.Port
+            : string.Equals(uri.Scheme, "rtsps", StringComparison.OrdinalIgnoreCase) ? 322 : 554;
+
+        using var client = new TcpClient();
+        using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        probeCts.CancelAfter(RtspProbeTimeout);
+
+        try
+        {
+            await client.ConnectAsync(uri.Host, port, probeCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
+        {
+            throw new InvalidOperationException($"RTSP server {uri.Host}:{port} did not respond within {RtspProbeTimeout.TotalSeconds:F0} second.");
+        }
+        catch (SocketException ex)
+        {
+            throw new InvalidOperationException($"RTSP server {uri.Host}:{port} is not reachable: {ex.SocketErrorCode}.", ex);
+        }
     }
 
     public async ValueTask DisposeAsync()
